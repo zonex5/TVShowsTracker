@@ -1,0 +1,54 @@
+<Window x:Class="TVShowsTracker.AddSeriesWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Icon="App.ico" Title="Добавить сериал" Width="560" SizeToContent="Height" ResizeMode="NoResize"
+ WindowStartupLocation="CenterOwner" ShowInTaskbar="False" PreviewKeyDown="OnPreviewKeyDown"
+ Background="#F3F5FA" Foreground="#20283A" FontFamily="Segoe UI" FontSize="14">
+ <Window.Resources><ResourceDictionary Source="Theme.xaml"/></Window.Resources>
+  <StackPanel Margin="16">
+   <TextBlock x:Name="ImportLine" Visibility="Collapsed" Margin="0,0,0,8" TextWrapping="Wrap"/>
+   <Border Background="White" BorderBrush="#8C98AF" BorderThickness="1" CornerRadius="8" Padding="2">
+    <DockPanel>
+     <Button x:Name="SearchButton" DockPanel.Dock="Right" Width="32" Height="30" Padding="0"
+             Click="SearchClick" IsDefault="True" ToolTip="Найти сериал" AutomationProperties.Name="Найти сериал">
+      <Path Data="M 11,7 A 4,4 0 1 1 3,7 A 4,4 0 1 1 11,7 M 10,10 L 14,14"
+            Stroke="#20283A" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+     </Button>
+     <TextBox x:Name="Query" AutomationProperties.Name="Название сериала" Padding="8,4"
+              Background="Transparent" Foreground="#20283A" CaretBrush="#20283A" BorderThickness="0"
+              VerticalContentAlignment="Center" ToolTip="Введите название сериала"/>
+    </DockPanel>
+   </Border>
+   <ListBox x:Name="Results" Visibility="Collapsed" Margin="0,8,0,0" MaxHeight="260"
+            AutomationProperties.Name="Результаты поиска" PreviewKeyDown="ResultsKeyDown">
+    <ListBox.ItemContainerStyle>
+     <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+      <EventSetter Event="MouseDoubleClick" Handler="ResultDoubleClick"/>
+     </Style>
+    </ListBox.ItemContainerStyle>
+    <ListBox.ItemTemplate>
+       <DataTemplate>
+        <Grid>
+         <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="34"/>
+          <ColumnDefinition Width="*"/>
+         </Grid.ColumnDefinitions>
+         <Border Height="48" Background="#EDF0F7" CornerRadius="4">
+          <Grid>
+           <TextBlock Text="▧" Foreground="{StaticResource Muted}"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+           <Image Source="{Binding image.medium}" Stretch="Uniform"
+                  ImageFailed="ThumbnailFailed"/>
+          </Grid>
+         </Border>
+         <TextBlock Grid.Column="1" Text="{Binding Label}" Margin="9,0,0,0"
+                    TextWrapping="Wrap" VerticalAlignment="Center"/>
+        </Grid>
+       </DataTemplate>
+      </ListBox.ItemTemplate>
+   </ListBox>
+  <TextBlock x:Name="Status" Margin="0,10,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+  <Button x:Name="SkipButton" Visibility="Collapsed" Margin="0,10,0,0" Padding="10,4"
+          HorizontalAlignment="Right" Content="Пропустить строку" Click="SkipClick"/>
+  </StackPanel>
+</Window>
