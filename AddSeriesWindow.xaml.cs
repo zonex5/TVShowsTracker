@@ -26,7 +26,7 @@ namespace TVShowsTracker
         {
             Title = "Выбрать сериал для импорта";
             ImportLine.Text = line;
-            ImportLine.Visibility = SkipButton.Visibility = Visibility.Visible;
+            ImportLinePanel.Visibility = SkipButton.Visibility = Visibility.Visible;
             Query.Text = query;
             Loaded += (sender, args) => Query.SelectAll();
             ShowResults(candidates);

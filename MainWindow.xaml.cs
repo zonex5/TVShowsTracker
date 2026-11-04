@@ -4,13 +4,16 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
@@ -22,37 +25,100 @@ namespace TVShowsTracker
         private Entry Selected => Shows.SelectedItem as Entry;
         private bool ready;
         private Mutex instance;
+        private CancellationTokenSource refreshCancellation;
+        private Task refreshTask = Task.CompletedTask;
 
         public MainWindow() { InitializeComponent(); }
 
-        private async void OnLoaded(object sender, RoutedEventArgs e)
+        private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            instance = new Mutex(true, @"Local\SeriesDesk.Library", out bool first);
+            instance = new Mutex(true, @"Local\TVShowsTracker.Library", out bool first);
             if (!first)
             {
                 instance.Dispose();
-                MessageBox.Show("TVShowsTracker уже открыт.");
+                new NoticeWindow(this, "TVShowsTracker уже открыт", "Переключитесь на открытое окно дневника.").ShowDialog();
                 Close();
                 return;
             }
-            Closed += (s, args) => instance.Dispose();
+            Closed += (s, args) =>
+            {
+                refreshCancellation?.Cancel();
+                instance.Dispose();
+            };
             try
             {
                 entries = Library.Read();
-                ready = true;
                 BindLibrary(null);
-                await Refresh();
+                ready = true;
             }
             catch (Exception ex)
             {
                 OpenSearchButton.IsEnabled = ImportButton.IsEnabled = RefreshButton.IsEnabled = false;
-                Status.Text = "Не удалось открыть библиотеку. " + ex.Message;
+                LibrarySearchButton.IsEnabled = false;
+                ShowError("Не удалось открыть библиотеку. " + ex.Message);
+                return;
             }
+            bool refreshOnStartup;
+            try
+            {
+                refreshOnStartup = AppSettings.RefreshCatalogOnStartup;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is SecurityException)
+            {
+                ShowError("Не удалось прочитать настройки. " + ex.Message);
+                return;
+            }
+            if (refreshOnStartup) refreshTask = Refresh();
         }
+
+        private void OpenSettings(object sender, RoutedEventArgs e) => new SettingsWindow(this).ShowDialog();
 
         private void LibraryTabChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ready && e.Source == LibraryTabs) BindLibrary(Selected);
+        }
+
+        private void ToggleLibrarySearch(object sender, RoutedEventArgs e)
+        {
+            if (LibrarySearchPanel.Visibility == Visibility.Visible)
+            {
+                HideLibrarySearch();
+                return;
+            }
+
+            LibrarySearchPanel.Visibility = Visibility.Visible;
+            LibraryQuery.Focus();
+        }
+
+        private void WindowPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape || LibrarySearchPanel.Visibility != Visibility.Visible) return;
+
+            HideLibrarySearch();
+            e.Handled = true;
+        }
+
+        private void HideLibrarySearch()
+        {
+            LibrarySearchPanel.Visibility = Visibility.Collapsed;
+            LibraryQuery.Clear();
+            LibrarySearchButton.Focus();
+        }
+
+        private void LibraryQueryChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!ready) return;
+
+            var selection = Selected;
+            var season = (Seasons.SelectedItem as SeasonRow)?.Number;
+            BindLibrary(selection);
+            if (selection != null && Selected == selection) RenderDetails(season);
+        }
+
+        private void ClearLibraryQuery(object sender, RoutedEventArgs e)
+        {
+            LibraryQuery.Focus();
+            LibraryQuery.Clear();
         }
 
         private void BindLibrary(Entry selection)
@@ -72,6 +138,13 @@ namespace TVShowsTracker
                     break;
             }
 
+            string query = LibraryQuery.Text.Trim();
+            if (query.Length > 0)
+                visible = visible.Where(entry =>
+                    entry.Show.name?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    entry.Show.RussianTitle?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+
+            LibraryEmptyMessage.Text = query.Length == 0 ? "В этом разделе пока нет сериалов" : "Сериалы не найдены";
             var ordered = visible.OrderByDescending(entry => entry.ActivityOrder)
                 .ThenBy(entry => entry.Show.name).ToList();
             Shows.ItemsSource = ordered;
@@ -83,31 +156,46 @@ namespace TVShowsTracker
             BindLibrary(entry);
             if (Selected == entry) return;
 
-            LibraryTabs.SelectedIndex = 0;
+            LibraryQuery.Clear();
+            if (!Shows.Items.Contains(entry)) LibraryTabs.SelectedIndex = 0;
             Shows.SelectedItem = entry;
         }
 
-        private async void RefreshClick(object sender, RoutedEventArgs e) => await Refresh();
+        private void RefreshClick(object sender, RoutedEventArgs e)
+        {
+            if (refreshCancellation != null) refreshCancellation.Cancel();
+            else refreshTask = Refresh();
+        }
 
         private async Task Refresh()
         {
             if (!ready || entries.Count == 0) return;
-            RefreshButton.IsEnabled = ImportButton.IsEnabled = false;
-            Status.Text = "Обновляем каталог…";
+            var snapshot = entries.ToArray();
+            var cancellation = new CancellationTokenSource();
+            refreshCancellation = cancellation;
+            var token = cancellation.Token;
+            SetRefreshButton(true);
             int failed = 0;
+            string result = null;
             try
             {
-                foreach (var entry in entries.ToArray())
+                for (int index = 0; index < snapshot.Length; index++)
                 {
+                    if (index > 0) await Task.Delay(500, token);
+                    var entry = snapshot[index];
+                    if (!entries.Contains(entry)) continue;
+
+                    RefreshStatus.Text = $"Обновляем каталог · {index + 1} из {snapshot.Length}…";
                     try
                     {
-                        var fresh = await Catalog.Load(entry.Show.id);
+                        var fresh = await Catalog.Load(entry.Show.id, token, entry.Show.RussianTitle);
+                        token.ThrowIfCancellationRequested();
                         if (!entries.Contains(entry)) continue;
                         var previous = (entry.Show, entry.Seasons, entry.Episodes);
                         entry.Show = fresh.Show;
                         entry.Seasons = fresh.Seasons;
                         entry.Episodes = fresh.Episodes;
-                        if (!Save())
+                        if (Save() != null)
                         {
                             (entry.Show, entry.Seasons, entry.Episodes) = previous;
                             failed++;
@@ -118,16 +206,39 @@ namespace TVShowsTracker
                         BindLibrary(selected);
                         if (selected != null && Selected == selected) RenderDetails(season);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (!(ex is CatalogUnavailableException) && !token.IsCancellationRequested)
                     {
                         failed++;
                         Debug.WriteLine(ex);
                     }
-                    await Task.Delay(500);
                 }
-                Status.Text = failed == 0 ? "Каталог обновлён." : $"Не удалось обновить: {failed}. Используются сохранённые данные.";
+                result = failed == 0 ? "Каталог обновлён." : $"Не удалось обновить: {failed}. Используются сохранённые данные.";
             }
-            finally { RefreshButton.IsEnabled = ImportButton.IsEnabled = true; }
+            catch (Exception) when (token.IsCancellationRequested)
+            {
+                result = "Обновление каталога остановлено.";
+            }
+            catch (CatalogUnavailableException ex)
+            {
+                Debug.WriteLine(ex);
+                result = ex.Message + " Библиотека доступна.";
+            }
+            finally
+            {
+                refreshCancellation = null;
+                cancellation.Dispose();
+                SetRefreshButton(false, result);
+            }
+        }
+
+        private void SetRefreshButton(bool refreshing, string result = null)
+        {
+            string label = refreshing ? "Остановить обновление каталога" : "Обновить каталог";
+            RefreshStatusBar.Visibility = refreshing ? Visibility.Visible : Visibility.Collapsed;
+            RefreshButton.ToolTip = result == null ? label : label + Environment.NewLine + result;
+            AutomationProperties.SetName(RefreshButton, label);
+            AutomationProperties.SetHelpText(RefreshButton, result ?? string.Empty);
+            RefreshGlyph.Data = (Geometry)FindResource(refreshing ? "StopIcon" : "RefreshIcon");
         }
 
         private async void ImportClick(object sender, RoutedEventArgs e)
@@ -139,6 +250,8 @@ namespace TVShowsTracker
             OpenSearchButton.IsEnabled = ImportButton.IsEnabled = RefreshButton.IsEnabled = false;
             try
             {
+                refreshCancellation?.Cancel();
+                await refreshTask;
                 var lines = File.ReadAllLines(dialog.FileName, new UTF8Encoding(false, true));
                 var errors = new List<string>();
                 int imported = 0;
@@ -147,7 +260,7 @@ namespace TVShowsTracker
                     var line = lines[index].Trim();
                     if (line.Length == 0) continue;
 
-                    Status.Text = $"Импорт · строка {index + 1} из {lines.Length}…";
+                    ImportButton.ToolTip = $"Импорт · строка {index + 1} из {lines.Length}…";
                     try
                     {
                         if (await ImportLine(line)) imported++;
@@ -159,30 +272,17 @@ namespace TVShowsTracker
                     }
                 }
 
-                Status.Text = $"Импорт завершён. Обработано строк: {imported}. Пропущено: {errors.Count}.";
-                if (errors.Count > 0)
-                {
-                    var report = new TextBox
-                    {
-                        Text = string.Join(Environment.NewLine, errors),
-                        IsReadOnly = true,
-                        TextWrapping = TextWrapping.Wrap,
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        Margin = new Thickness(12)
-                    };
-                    new Window
-                    {
-                        Owner = this, Title = "Пропущенные строки импорта", Content = report,
-                        Width = 560, Height = 320, WindowStartupLocation = WindowStartupLocation.CenterOwner
-                    }.ShowDialog();
-                }
+                string summary = $"Обработано строк: {imported}. Пропущено: {errors.Count}.";
+                string report = errors.Count > 0 ? string.Join(Environment.NewLine, errors) : null;
+                new NoticeWindow(this, "Импорт завершён", summary, report).ShowDialog();
             }
             catch (Exception ex)
             {
-                Status.Text = "Не удалось импортировать файл. " + ex.Message;
+                ShowError("Не удалось импортировать файл. " + ex.Message);
             }
             finally
             {
+                ImportButton.ToolTip = AutomationProperties.GetName(ImportButton);
                 OpenSearchButton.IsEnabled = ImportButton.IsEnabled = RefreshButton.IsEnabled = true;
             }
         }
@@ -224,14 +324,15 @@ namespace TVShowsTracker
                 (episode.season == seasonNumber && (!episodeGroup.Success || episode.number <= episodeNumber)));
             bool added = !entries.Contains(entry);
             if (added) entries.Add(entry);
-            if (!UpdateProgress(item =>
+            string error = UpdateProgress(item =>
             {
                 item.Watched.UnionWith(watched.Select(episode => episode.id));
                 if (item.Current.HasValue && item.Watched.Contains(item.Current.Value)) item.Current = null;
-            }, entry))
+            }, entry);
+            if (error != null)
             {
                 if (added) entries.Remove(entry);
-                throw new InvalidOperationException(Status.Text);
+                throw new InvalidOperationException(error);
             }
             return true;
         }
@@ -247,19 +348,18 @@ namespace TVShowsTracker
             if (existing != null)
             {
                 OpenLibraryEntry(existing);
-                Status.Text = "Сериал уже в библиотеке.";
                 return null;
             }
 
             var entry = await Catalog.Load(show.id);
             entries.Add(entry);
-            if (!Save())
+            string error = Save();
+            if (error != null)
             {
                 entries.Remove(entry);
-                return Status.Text;
+                return error;
             }
             OpenLibraryEntry(entry);
-            Status.Text = "Сериал добавлен.";
             return null;
         }
 
@@ -288,7 +388,11 @@ namespace TVShowsTracker
                 IsEnabled = CanTogglePause(entry)
             };
             pause.Click += (source, args) => TogglePause(entry);
-            var remove = new MenuItem { Header = "Удалить сериал из списка…" };
+            var remove = new MenuItem
+            {
+                Header = "Удалить сериал из списка…",
+                Foreground = (Brush)FindResource("Danger")
+            };
             remove.Click += (source, args) => RemoveEntry(entry);
             menu.Items.Add(mark);
             menu.Items.Add(pause);
@@ -298,26 +402,32 @@ namespace TVShowsTracker
 
         private void RemoveEntry(Entry entry)
         {
-            if (entry == null || MessageBox.Show(this, $"Удалить «{entry.Show.name}» вместе с отметками просмотра?",
-                "Удалить сериал", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+            if (entry == null || new NoticeWindow(this, "Удалить сериал",
+                $"Удалить «{entry.Show.name}» вместе с отметками просмотра?", confirm: true).ShowDialog() != true) return;
             entries.Remove(entry);
-            if (!Save())
+            string error = Save();
+            if (error != null)
             {
                 entries.Add(entry);
+                ShowError(error);
                 return;
             }
             BindLibrary(Selected == entry ? entries.FirstOrDefault() : Selected);
-            Status.Text = "Сериал удалён.";
         }
 
-        private bool Save()
+        private string Save()
         {
-            try { Library.Save(entries); return true; }
+            try { Library.Save(entries); return null; }
             catch (Exception ex)
             {
-                Status.Text = "Не удалось сохранить библиотеку. " + ex.Message;
-                return false;
+                Debug.WriteLine(ex);
+                return "Не удалось сохранить библиотеку. " + ex.Message;
             }
+        }
+
+        private void ShowError(string message)
+        {
+            if (message != null) new NoticeWindow(this, "Ошибка", message).ShowDialog();
         }
 
         private void ShowChanged(object sender, SelectionChangedEventArgs e) => RenderDetails();
@@ -330,6 +440,8 @@ namespace TVShowsTracker
             if (entry == null) return;
 
             ShowTitle.Text = entry.Show.Label;
+            ShowRussianTitle.Text = entry.Show.HasRussianTitle ? "\u2002" + entry.Show.RussianTitle : string.Empty;
+            ShowHeading.ToolTip = ShowTitle.Text + ShowRussianTitle.Text;
             PauseButton.Content = entry.IsPaused ? "Снять с паузы" : "Поставить на паузу";
             PauseButton.IsEnabled = CanTogglePause(entry);
             Cover.Source = null;
@@ -401,7 +513,7 @@ namespace TVShowsTracker
         {
             var box = (CheckBox)sender;
             if (!(box.DataContext is EpisodeRow row)) return;
-            UpdateProgress(entry =>
+            ShowError(UpdateProgress(entry =>
             {
                 if (box.IsChecked == true)
                 {
@@ -409,13 +521,13 @@ namespace TVShowsTracker
                     if (entry.Current == row.Id) entry.Current = null;
                 }
                 else entry.Watched.Remove(row.Id);
-            });
+            }));
         }
 
         private void SetCurrent(object sender, RoutedEventArgs e)
         {
             if (((Button)sender).DataContext is EpisodeRow row)
-                UpdateProgress(entry => entry.Current = row.Id);
+                ShowError(UpdateProgress(entry => entry.Current = row.Id));
         }
 
         private void TogglePause(object sender, RoutedEventArgs e) => TogglePause(Selected);
@@ -432,15 +544,16 @@ namespace TVShowsTracker
             var season = (Seasons.SelectedItem as SeasonRow)?.Number;
             bool wasPaused = entry.IsPaused;
             entry.IsPaused = !wasPaused;
-            if (!Save())
+            string error = Save();
+            if (error != null)
             {
                 entry.IsPaused = wasPaused;
+                ShowError(error);
                 return;
             }
 
             BindLibrary(selection);
             if (Selected == selection) RenderDetails(season);
-            Status.Text = entry.IsPaused ? "Сериал поставлен на паузу." : "Сериал снят с паузы.";
         }
 
         private void MarkSeason(object sender, RoutedEventArgs e)
@@ -451,18 +564,18 @@ namespace TVShowsTracker
 
         private void MarkSeasonWatched(Entry target, int seasonNumber)
         {
-            UpdateProgress(entry =>
+            ShowError(UpdateProgress(entry =>
             {
                 foreach (var episode in entry.Episodes.Where(episode => episode.season == seasonNumber))
                     entry.Watched.Add(episode.id);
                 if (entry.Current.HasValue && entry.Watched.Contains(entry.Current.Value)) entry.Current = null;
-            }, target);
+            }, target));
         }
 
-        private bool UpdateProgress(Action<Entry> update, Entry target = null)
+        private string UpdateProgress(Action<Entry> update, Entry target = null)
         {
             var entry = target ?? Selected;
-            if (entry == null) return false;
+            if (entry == null) return null;
             var previous = new HashSet<int>(entry.Watched);
             var current = entry.Current;
             var season = (Seasons.SelectedItem as SeasonRow)?.Number;
@@ -473,24 +586,20 @@ namespace TVShowsTracker
             if (changed)
                 entry.ActivityOrder = entries.Max(item => item.ActivityOrder) + 1;
 
-            bool saved = Save();
-            if (!saved)
+            string error = Save();
+            if (error != null)
             {
                 entry.Watched = previous;
                 entry.Current = current;
                 entry.ActivityOrder = activity;
             }
-            else
+            else if (changed)
             {
-                if (changed)
-                {
-                    BindLibrary(selection);
-                    if (Shows.Items.Contains(entry)) Shows.ScrollIntoView(entry);
-                }
-                Status.Text = "Прогресс сохранён.";
+                BindLibrary(selection);
+                if (Shows.Items.Contains(entry)) Shows.ScrollIntoView(entry);
             }
             if (selection != null && Selected == selection && (entry == selection || changed)) RenderDetails(season);
-            return saved;
+            return error;
         }
 
         private void ThumbnailFailed(object sender, ExceptionRoutedEventArgs e) =>
@@ -498,14 +607,13 @@ namespace TVShowsTracker
 
         private void PosterFailed(object sender, ExceptionRoutedEventArgs e) => Cover.Source = null;
         private void OpenSource(object sender, RoutedEventArgs e) => OpenLink(Selected?.Show.url);
-        private void OpenAttribution(object sender, RoutedEventArgs e) => OpenLink("https://www.tvmaze.com/api#licensing");
 
         private void OpenLink(string link)
         {
             if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || uri.Host != "www.tvmaze.com" ||
                 (uri.Scheme != "https" && uri.Scheme != "http")) return;
             try { Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
-            catch (Exception ex) { Status.Text = "Не удалось открыть ссылку. " + ex.Message; }
+            catch (Exception ex) { ShowError("Не удалось открыть ссылку. " + ex.Message); }
         }
 
         public sealed class SeasonRow
