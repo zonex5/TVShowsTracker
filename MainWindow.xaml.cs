@@ -388,6 +388,8 @@ namespace TVShowsTracker
                 IsEnabled = CanTogglePause(entry)
             };
             pause.Click += (source, args) => TogglePause(entry);
+            var copyTitle = new MenuItem { Header = "Скопировать название сериала" };
+            copyTitle.Click += (source, args) => CopyShowTitle(entry);
             var remove = new MenuItem
             {
                 Header = "Удалить сериал из списка…",
@@ -396,8 +398,18 @@ namespace TVShowsTracker
             remove.Click += (source, args) => RemoveEntry(entry);
             menu.Items.Add(mark);
             menu.Items.Add(pause);
+            menu.Items.Add(copyTitle);
             menu.Items.Add(new Separator());
             menu.Items.Add(remove);
+        }
+
+        private void CopyShowTitle(Entry entry)
+        {
+            try { Clipboard.SetText(entry.Show.name ?? string.Empty); }
+            catch (System.Runtime.InteropServices.ExternalException ex)
+            {
+                ShowError("Не удалось скопировать название сериала. " + ex.Message);
+            }
         }
 
         private void RemoveEntry(Entry entry)
