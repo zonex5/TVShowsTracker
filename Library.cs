@@ -58,7 +58,10 @@ namespace TVShowsTracker
         public HashSet<int> Watched { get; set; } = new HashSet<int>();
         public int? Current { get; set; }
         public long ActivityOrder { get; set; }
-        public bool IsPaused { get; set; }
+        public string Category { get; set; } = "Watching";
+
+        [BsonIgnore]
+        public string CategoryLabel => Category == "Paused" ? "На паузе" : Category == "Watched" ? "Просмотренные" : "Сейчас смотрю";
 
         [BsonIgnore]
         public bool HasUnwatchedEpisodes => Episodes.Any(IsReleasedAndUnwatched);
@@ -71,7 +74,7 @@ namespace TVShowsTracker
                 DateTimeStyles.None, out var release) && release <= DateTime.Today);
 
         [BsonIgnore]
-        public bool ShowUnwatchedIndicator => !IsPaused && HasUnwatchedEpisodes;
+        public bool ShowUnwatchedIndicator => Category != "Paused" && HasUnwatchedEpisodes;
 
         [BsonIgnore]
         public string NextUnwatchedEpisodeLabel

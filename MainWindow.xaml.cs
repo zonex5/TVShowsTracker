@@ -128,14 +128,13 @@ namespace TVShowsTracker
             switch (LibraryTabs.SelectedIndex)
             {
                 case 1:
-                    visible = visible.Where(entry => entry.ShowUnwatchedIndicator);
+                    visible = visible.Where(entry => entry.Category == "Watching");
                     break;
                 case 2:
-                    visible = visible.Where(entry => !entry.IsPaused &&
-                        string.Equals(entry.Show.status, "Ended", StringComparison.OrdinalIgnoreCase));
+                    visible = visible.Where(entry => entry.Category == "Watched");
                     break;
                 case 3:
-                    visible = visible.Where(entry => entry.IsPaused);
+                    visible = visible.Where(entry => entry.Category == "Paused");
                     break;
             }
 
@@ -146,8 +145,9 @@ namespace TVShowsTracker
                     entry.Show.RussianTitle?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
 
             LibraryEmptyMessage.Text = query.Length == 0 ? "В этом разделе пока нет сериалов" : "Сериалы не найдены";
-            var ordered = visible.OrderByDescending(entry => entry.ActivityOrder)
-                .ThenBy(entry => entry.Show.name).ToList();
+            var ordered = (LibraryTabs.SelectedIndex == 0
+                ? visible.OrderBy(entry => entry.Show.name)
+                : visible.OrderByDescending(entry => entry.ActivityOrder).ThenBy(entry => entry.Show.name)).ToList();
             Shows.ItemsSource = ordered;
             Shows.SelectedItem = ordered.Contains(selection) ? selection : ordered.FirstOrDefault();
         }
@@ -179,7 +179,7 @@ namespace TVShowsTracker
         {
             if (!ready || refreshCancellation != null) return;
             var snapshot = singleEntry == null
-                ? entries.Where(entry => !entry.Show.IsManual && !entry.IsPaused).ToArray()
+                ? entries.Where(entry => !entry.Show.IsManual && entry.Category != "Paused").ToArray()
                 : new[] { singleEntry };
             if (snapshot.Length == 0)
             {
@@ -198,7 +198,7 @@ namespace TVShowsTracker
                 {
                     if (index > 0) await Task.Delay(500, token);
                     var entry = snapshot[index];
-                    if (!entries.Contains(entry) || (singleEntry == null && entry.IsPaused)) continue;
+                    if (!entries.Contains(entry) || (singleEntry == null && entry.Category == "Paused")) continue;
 
                     RefreshStatus.Text = singleEntry == null
                         ? $"Обновляем каталог · {index + 1} из {snapshot.Length}…"
@@ -207,7 +207,7 @@ namespace TVShowsTracker
                     {
                         var fresh = await Catalog.Load(entry.Show.id, token, entry.Show.RussianTitle);
                         token.ThrowIfCancellationRequested();
-                        if (!entries.Contains(entry) || (singleEntry == null && entry.IsPaused)) continue;
+                        if (!entries.Contains(entry) || (singleEntry == null && entry.Category == "Paused")) continue;
                         var previous = (entry.Show, entry.Seasons, entry.Episodes);
                         entry.Show = fresh.Show;
                         entry.Seasons = fresh.Seasons;
@@ -417,6 +417,19 @@ namespace TVShowsTracker
 
             var menu = row.ContextMenu;
             menu.Items.Clear();
+            var move = new MenuItem { Header = "Переместить в категорию" };
+            foreach (var category in new[] { "Watching", "Watched", "Paused" })
+            {
+                var item = new MenuItem
+                {
+                    Header = category == "Watching" ? "Сейчас смотрю" : category == "Watched" ? "Просмотренные" : "На паузе",
+                    IsEnabled = entry.Category != category
+                };
+                item.Click += (source, args) => MoveToCategory(entry, category);
+                move.Items.Add(item);
+            }
+            menu.Items.Add(move);
+            menu.Items.Add(new Separator());
             var mark = new MenuItem { Header = "Отметить сезон как просмотренный" };
             foreach (var season in entry.Episodes.GroupBy(episode => episode.season).OrderBy(group => group.Key))
             {
@@ -429,12 +442,6 @@ namespace TVShowsTracker
                 mark.Items.Add(item);
             }
             mark.IsEnabled = mark.Items.Count > 0;
-            var pause = new MenuItem
-            {
-                Header = entry.IsPaused ? "Снять с паузы" : "Поставить на паузу",
-                IsEnabled = CanTogglePause(entry)
-            };
-            pause.Click += (source, args) => TogglePause(entry);
             var copyTitle = new MenuItem { Header = "Скопировать название сериала" };
             copyTitle.Click += (source, args) => CopyShowTitle(entry);
             var remove = new MenuItem
@@ -444,7 +451,6 @@ namespace TVShowsTracker
             };
             remove.Click += (source, args) => RemoveEntry(entry);
             menu.Items.Add(mark);
-            menu.Items.Add(pause);
             menu.Items.Add(copyTitle);
             if (entry.Show.IsManual)
             {
@@ -537,8 +543,6 @@ namespace TVShowsTracker
             SourceLink.Visibility = entry.Show.IsManual ? Visibility.Collapsed : Visibility.Visible;
             ShowRussianTitle.Text = entry.Show.HasRussianTitle ? "\u2002" + entry.Show.RussianTitle : string.Empty;
             ShowHeading.ToolTip = ShowTitle.Text + ShowRussianTitle.Text;
-            PauseButton.Content = entry.IsPaused ? "Снять с паузы" : "Поставить на паузу";
-            PauseButton.IsEnabled = CanTogglePause(entry);
             Cover.Source = null;
             if (Uri.TryCreate(entry.Show.image?.medium, UriKind.Absolute, out var poster) && poster.Scheme == "https")
             {
@@ -636,30 +640,21 @@ namespace TVShowsTracker
                 }));
         }
 
-        private void TogglePause(object sender, RoutedEventArgs e) => TogglePause(Selected);
-
-        private static bool CanTogglePause(Entry entry) =>
-            entry.IsPaused || entry.Episodes.Count == 0 || entry.Episodes.Any(episode => !entry.Watched.Contains(episode.id)) ||
-            !string.Equals(entry.Show.status, "Ended", StringComparison.OrdinalIgnoreCase);
-
-        private void TogglePause(Entry entry)
+        private void MoveToCategory(Entry entry, string category)
         {
-            if (entry == null || !CanTogglePause(entry)) return;
-
             var selection = Selected;
             var season = (Seasons.SelectedItem as SeasonRow)?.Number;
-            bool wasPaused = entry.IsPaused;
-            entry.IsPaused = !wasPaused;
+            var previous = entry.Category;
+            entry.Category = category;
             string error = Save();
             if (error != null)
             {
-                entry.IsPaused = wasPaused;
+                entry.Category = previous;
                 ShowError(error);
                 return;
             }
-
             BindLibrary(selection);
-            if (Selected == selection) RenderDetails(season);
+            if (selection != null && Selected == selection) RenderDetails(season);
         }
 
         private void MarkSeason(object sender, RoutedEventArgs e)

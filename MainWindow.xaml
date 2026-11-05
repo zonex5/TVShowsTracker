@@ -147,8 +147,8 @@
        </Style>
       </TabControl.ItemContainerStyle>
       <TabItem Header="Все"/>
-      <TabItem Header="Непросмотренные" IsSelected="True"/>
-      <TabItem Header="Завершённые"/>
+      <TabItem Header="Сейчас смотрю" IsSelected="True"/>
+      <TabItem Header="Просмотренные"/>
       <TabItem Header="На паузе"/>
      </TabControl>
      <Grid>
@@ -176,21 +176,64 @@
             <TextBlock Text="{Binding NextUnwatchedEpisodeLabel}" FontSize="10" Foreground="{StaticResource Muted}"
                        HorizontalAlignment="Right" ToolTip="Следующая непросмотренная серия"
                        Visibility="{Binding HasUnwatchedEpisodes, Converter={StaticResource BooleanToVisibility}}"/>
-           <Border Margin="0,2,0,0" Padding="6,2" HorizontalAlignment="Right"
-                   Background="{StaticResource Warm}" CornerRadius="8"
-                   Visibility="{Binding IsPaused, Converter={StaticResource BooleanToVisibility}}">
-            <TextBlock Text="На паузе" Foreground="{StaticResource WarmInk}" FontSize="11" FontWeight="SemiBold"/>
-           </Border>
            <Ellipse Width="8" Height="8" Margin="0,5,2,0" HorizontalAlignment="Right"
                     Fill="{StaticResource Focus}" ToolTip="Есть непросмотренные серии"
                     AutomationProperties.Name="Есть непросмотренные серии"
                     Visibility="{Binding ShowUnwatchedIndicator, Converter={StaticResource BooleanToVisibility}}"/>
            </StackPanel>
            <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="{Binding Show.Label}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Show.Label}" FontWeight="SemiBold" TextWrapping="Wrap">
+             <TextBlock.Style>
+              <Style TargetType="TextBlock">
+               <Style.Triggers>
+                <MultiDataTrigger>
+                 <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding SelectedIndex, ElementName=LibraryTabs}" Value="0"/>
+                  <Condition Binding="{Binding Category}" Value="Watched"/>
+                 </MultiDataTrigger.Conditions>
+                 <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+                </MultiDataTrigger>
+               </Style.Triggers>
+              </Style>
+             </TextBlock.Style>
+            </TextBlock>
             <TextBlock Text="{Binding Show.RussianTitle}" Foreground="{StaticResource Muted}" FontSize="12"
                        TextWrapping="Wrap" Margin="0,2,0,0"
                        Visibility="{Binding Show.HasRussianTitle, Converter={StaticResource BooleanToVisibility}}"/>
+            <Border Margin="0,4,0,0" Padding="6,1,6,3" HorizontalAlignment="Left" CornerRadius="8">
+             <Border.Style>
+              <Style TargetType="Border">
+               <Setter Property="Visibility" Value="Collapsed"/>
+               <Setter Property="Background" Value="{StaticResource SoftBlue}"/>
+               <Style.Triggers>
+                <DataTrigger Binding="{Binding SelectedIndex, ElementName=LibraryTabs}" Value="0">
+                 <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Category}" Value="Watched">
+                 <Setter Property="Background" Value="#DFE5ED"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Category}" Value="Paused">
+                 <Setter Property="Background" Value="{StaticResource Warm}"/>
+                </DataTrigger>
+               </Style.Triggers>
+              </Style>
+             </Border.Style>
+             <TextBlock Text="{Binding CategoryLabel}" FontSize="10" FontWeight="SemiBold" TextWrapping="Wrap">
+              <TextBlock.Style>
+               <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+                <Style.Triggers>
+                 <DataTrigger Binding="{Binding Category}" Value="Watched">
+                  <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+                 </DataTrigger>
+                 <DataTrigger Binding="{Binding Category}" Value="Paused">
+                  <Setter Property="Foreground" Value="{StaticResource WarmInk}"/>
+                 </DataTrigger>
+                </Style.Triggers>
+               </Style>
+              </TextBlock.Style>
+             </TextBlock>
+            </Border>
            </StackPanel>
           </DockPanel>
          </Grid>
@@ -279,7 +322,6 @@
        <ComboBox x:Name="Seasons" MinWidth="106" Padding="9,5,28,5" DisplayMemberPath="Label" SelectionChanged="SeasonChanged"
                  AutomationProperties.Name="Сезон" Margin="0,0,7,6"/>
        <Button x:Name="MarkSeasonButton" Padding="9,5" Content="Отметить сезон" Click="MarkSeason" Margin="0,0,7,6"/>
-       <Button x:Name="PauseButton" Padding="9,5" Content="Поставить на паузу" Click="TogglePause" Margin="0,0,0,6"/>
       </WrapPanel>
       <ListBox x:Name="Episodes" AutomationProperties.Name="Список серий">
        <ListBox.ItemTemplate>

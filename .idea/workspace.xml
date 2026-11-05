@@ -11,14 +11,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2cd871b9-1926-4491-b57d-54b8dceee035" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/AddSeriesWindow.xaml" beforeDir="false" afterPath="$PROJECT_DIR$/AddSeriesWindow.xaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/AddSeriesWindow.xaml.cs" beforeDir="false" afterPath="$PROJECT_DIR$/AddSeriesWindow.xaml.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Library.cs" beforeDir="false" afterPath="$PROJECT_DIR$/Library.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/MainWindow.xaml" beforeDir="false" afterPath="$PROJECT_DIR$/MainWindow.xaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/MainWindow.xaml.cs" beforeDir="false" afterPath="$PROJECT_DIR$/MainWindow.xaml.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Theme.xaml" beforeDir="false" afterPath="$PROJECT_DIR$/Theme.xaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -111,6 +107,7 @@
       <workItem from="1793817732352" duration="36000" />
       <workItem from="1793818739705" duration="26000" />
       <workItem from="1793898257335" duration="1038000" />
+      <workItem from="1793905174411" duration="640000" />
     </task>
     <task id="LOCAL-00001" summary="#">
       <option name="closed" value="true" />
@@ -128,7 +125,15 @@
       <option name="project" value="LOCAL" />
       <updated>1793818753873</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="#">
+      <option name="closed" value="true" />
+      <created>1793905200172</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1793905200172</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
