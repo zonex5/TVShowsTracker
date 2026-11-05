@@ -50,6 +50,7 @@ namespace TVShowsTracker
                 entries = Library.Read();
                 BindLibrary(null);
                 ready = true;
+                UpdateRefreshSeriesButton();
             }
             catch (Exception ex)
             {
@@ -167,10 +168,24 @@ namespace TVShowsTracker
             else refreshTask = Refresh();
         }
 
-        private async Task Refresh()
+        private void RefreshSeriesClick(object sender, RoutedEventArgs e)
         {
-            if (!ready || entries.Count == 0) return;
-            var snapshot = entries.ToArray();
+            var entry = Selected;
+            if (entry == null || entry.Show.IsManual || !ImportButton.IsEnabled || refreshCancellation != null) return;
+            refreshTask = Refresh(entry);
+        }
+
+        private async Task Refresh(Entry singleEntry = null)
+        {
+            if (!ready || refreshCancellation != null) return;
+            var snapshot = singleEntry == null
+                ? entries.Where(entry => !entry.Show.IsManual && !entry.IsPaused).ToArray()
+                : new[] { singleEntry };
+            if (snapshot.Length == 0)
+            {
+                SetRefreshButton(false, "В библиотеке нет сериалов из TVmaze без паузы.");
+                return;
+            }
             var cancellation = new CancellationTokenSource();
             refreshCancellation = cancellation;
             var token = cancellation.Token;
@@ -183,14 +198,16 @@ namespace TVShowsTracker
                 {
                     if (index > 0) await Task.Delay(500, token);
                     var entry = snapshot[index];
-                    if (!entries.Contains(entry)) continue;
+                    if (!entries.Contains(entry) || (singleEntry == null && entry.IsPaused)) continue;
 
-                    RefreshStatus.Text = $"Обновляем каталог · {index + 1} из {snapshot.Length}…";
+                    RefreshStatus.Text = singleEntry == null
+                        ? $"Обновляем каталог · {index + 1} из {snapshot.Length}…"
+                        : $"Обновляем сериал · {entry.Show.Label}…";
                     try
                     {
                         var fresh = await Catalog.Load(entry.Show.id, token, entry.Show.RussianTitle);
                         token.ThrowIfCancellationRequested();
-                        if (!entries.Contains(entry)) continue;
+                        if (!entries.Contains(entry) || (singleEntry == null && entry.IsPaused)) continue;
                         var previous = (entry.Show, entry.Seasons, entry.Episodes);
                         entry.Show = fresh.Show;
                         entry.Seasons = fresh.Seasons;
@@ -212,7 +229,9 @@ namespace TVShowsTracker
                         Debug.WriteLine(ex);
                     }
                 }
-                result = failed == 0 ? "Каталог обновлён." : $"Не удалось обновить: {failed}. Используются сохранённые данные.";
+                result = failed == 0
+                    ? (singleEntry == null ? "Каталог обновлён." : $"Сериал обновлён: {singleEntry.Show.Label}.")
+                    : $"Не удалось обновить: {failed}. Используются сохранённые данные.";
             }
             catch (Exception) when (token.IsCancellationRequested)
             {
@@ -221,6 +240,7 @@ namespace TVShowsTracker
             catch (CatalogUnavailableException ex)
             {
                 Debug.WriteLine(ex);
+                failed++;
                 result = ex.Message + " Библиотека доступна.";
             }
             finally
@@ -228,6 +248,7 @@ namespace TVShowsTracker
                 refreshCancellation = null;
                 cancellation.Dispose();
                 SetRefreshButton(false, result);
+                if (singleEntry != null && failed > 0) ShowError(result);
             }
         }
 
@@ -239,6 +260,17 @@ namespace TVShowsTracker
             AutomationProperties.SetName(RefreshButton, label);
             AutomationProperties.SetHelpText(RefreshButton, result ?? string.Empty);
             RefreshGlyph.Data = (Geometry)FindResource(refreshing ? "StopIcon" : "RefreshIcon");
+            UpdateRefreshSeriesButton();
+        }
+
+        private void UpdateRefreshSeriesButton()
+        {
+            var entry = Selected;
+            RefreshSeriesButton.Visibility = entry != null && !entry.Show.IsManual
+                ? Visibility.Visible : Visibility.Collapsed;
+            RefreshSeriesButton.IsEnabled = ready && refreshCancellation == null && ImportButton.IsEnabled;
+            RefreshSeriesButton.ToolTip = refreshCancellation == null
+                ? "Обновить сериал" : "Дождитесь завершения обновления";
         }
 
         private async void ImportClick(object sender, RoutedEventArgs e)
@@ -248,6 +280,7 @@ namespace TVShowsTracker
             if (dialog.ShowDialog(this) != true) return;
 
             OpenSearchButton.IsEnabled = ImportButton.IsEnabled = RefreshButton.IsEnabled = false;
+            UpdateRefreshSeriesButton();
             try
             {
                 refreshCancellation?.Cancel();
@@ -284,6 +317,7 @@ namespace TVShowsTracker
             {
                 ImportButton.ToolTip = AutomationProperties.GetName(ImportButton);
                 OpenSearchButton.IsEnabled = ImportButton.IsEnabled = RefreshButton.IsEnabled = true;
+                UpdateRefreshSeriesButton();
             }
         }
 
@@ -320,8 +354,9 @@ namespace TVShowsTracker
                 (!episodeGroup.Success || episode.number == episodeNumber)))
                 throw new InvalidOperationException("Указанный сезон или серия отсутствует в каталоге.");
 
-            var watched = entry.Episodes.Where(episode => episode.season < seasonNumber ||
-                (episode.season == seasonNumber && (!episodeGroup.Success || episode.number <= episodeNumber)));
+            var watched = entry.Episodes.Where(episode => entry.IsEpisodeReleased(episode) &&
+                (episode.season < seasonNumber ||
+                (episode.season == seasonNumber && (!episodeGroup.Success || episode.number <= episodeNumber))));
             bool added = !entries.Contains(entry);
             if (added) entries.Add(entry);
             string error = UpdateProgress(item =>
@@ -339,7 +374,14 @@ namespace TVShowsTracker
 
         private void OpenSearch(object sender, RoutedEventArgs e)
         {
-            new AddSeriesWindow(AddSeries) { Owner = this }.ShowDialog();
+            new AddSeriesWindow(AddSeries, AddManualSeries) { Owner = this }.ShowDialog();
+        }
+
+        private string AddManualSeries(Entry entry)
+        {
+            entry.Show.id = entries.Where(item => item.Show.IsManual)
+                .Select(item => item.Show.id).DefaultIfEmpty(0).Min() - 1;
+            return SaveNewEntry(entry);
         }
 
         private async Task<string> AddSeries(Show show)
@@ -352,6 +394,11 @@ namespace TVShowsTracker
             }
 
             var entry = await Catalog.Load(show.id);
+            return SaveNewEntry(entry);
+        }
+
+        private string SaveNewEntry(Entry entry)
+        {
             entries.Add(entry);
             string error = Save();
             if (error != null)
@@ -376,7 +423,7 @@ namespace TVShowsTracker
                 var item = new MenuItem
                 {
                     Header = $"Сезон {season.Key}",
-                    IsEnabled = season.Any(episode => !entry.Watched.Contains(episode.id))
+                    IsEnabled = season.Any(episode => entry.IsEpisodeReleased(episode) && !entry.Watched.Contains(episode.id))
                 };
                 item.Click += (source, args) => MarkSeasonWatched(entry, season.Key);
                 mark.Items.Add(item);
@@ -399,8 +446,42 @@ namespace TVShowsTracker
             menu.Items.Add(mark);
             menu.Items.Add(pause);
             menu.Items.Add(copyTitle);
+            if (entry.Show.IsManual)
+            {
+                var edit = new MenuItem { Header = "Редактировать сериал…" };
+                edit.Click += (source, args) => EditManualSeries(entry);
+                menu.Items.Add(edit);
+            }
             menu.Items.Add(new Separator());
             menu.Items.Add(remove);
+        }
+
+        private void EditManualSeries(Entry entry)
+        {
+            new ManualSeriesWindow(updated =>
+            {
+                var previous = (entry.Show, entry.Seasons, entry.Episodes);
+                updated.Show.id = entry.Show.id;
+                (entry.Show, entry.Seasons, entry.Episodes) = (updated.Show, updated.Seasons, updated.Episodes);
+                string error = Save();
+                if (error != null)
+                {
+                    (entry.Show, entry.Seasons, entry.Episodes) = previous;
+                    return error;
+                }
+
+                var selection = Selected;
+                var season = (Seasons.SelectedItem as SeasonRow)?.Number;
+                BindLibrary(selection);
+                if (Selected == selection) RenderDetails(season);
+                return null;
+            }, entry.Show.name, entry) { Owner = this }.ShowDialog();
+        }
+
+        private void CopySelectedShowTitle(object sender, RoutedEventArgs e)
+        {
+            var entry = Selected;
+            if (entry != null) CopyShowTitle(entry);
         }
 
         private void CopyShowTitle(Entry entry)
@@ -447,11 +528,13 @@ namespace TVShowsTracker
         private void RenderDetails(int? preferredSeason = null)
         {
             var entry = Selected;
+            UpdateRefreshSeriesButton();
             Details.Visibility = entry == null ? Visibility.Collapsed : Visibility.Visible;
             Empty.Visibility = entry == null ? Visibility.Visible : Visibility.Collapsed;
             if (entry == null) return;
 
             ShowTitle.Text = entry.Show.Label;
+            SourceLink.Visibility = entry.Show.IsManual ? Visibility.Collapsed : Visibility.Visible;
             ShowRussianTitle.Text = entry.Show.HasRussianTitle ? "\u2002" + entry.Show.RussianTitle : string.Empty;
             ShowHeading.ToolTip = ShowTitle.Text + ShowRussianTitle.Text;
             PauseButton.Content = entry.IsPaused ? "Снять с паузы" : "Поставить на паузу";
@@ -505,12 +588,13 @@ namespace TVShowsTracker
                 {
                     Id = episode.id,
                     Label = $"{episode.number:00} · {episode.name}" +
-                        ReleaseLabel(episode.airdate) +
-                        (entry.Current == episode.id ? "  ◂ смотрю" : ""),
-                    Watched = entry.Watched.Contains(episode.id)
+                        ReleaseLabel(episode.airdate),
+                    Watched = entry.Watched.Contains(episode.id),
+                    IsCurrent = entry.Current == episode.id,
+                    IsUnreleased = !entry.IsEpisodeReleased(episode)
                 }).ToList();
             Episodes.ItemsSource = rows;
-            MarkSeasonButton.IsEnabled = rows.Any(row => !row.Watched);
+            MarkSeasonButton.IsEnabled = rows.Any(row => !row.IsUnreleased && !row.Watched);
         }
 
         private static string ReleaseLabel(string airdate)
@@ -529,6 +613,8 @@ namespace TVShowsTracker
             {
                 if (box.IsChecked == true)
                 {
+                    var episode = entry.Episodes.FirstOrDefault(item => item.id == row.Id);
+                    if (episode == null || !entry.IsEpisodeReleased(episode)) return;
                     entry.Watched.Add(row.Id);
                     if (entry.Current == row.Id) entry.Current = null;
                 }
@@ -539,13 +625,21 @@ namespace TVShowsTracker
         private void SetCurrent(object sender, RoutedEventArgs e)
         {
             if (((Button)sender).DataContext is EpisodeRow row)
-                ShowError(UpdateProgress(entry => entry.Current = row.Id));
+                ShowError(UpdateProgress(entry =>
+                {
+                    if (entry.Current == row.Id) entry.Current = null;
+                    else
+                    {
+                        var episode = entry.Episodes.FirstOrDefault(item => item.id == row.Id);
+                        if (episode != null && entry.IsEpisodeReleased(episode)) entry.Current = row.Id;
+                    }
+                }));
         }
 
         private void TogglePause(object sender, RoutedEventArgs e) => TogglePause(Selected);
 
         private static bool CanTogglePause(Entry entry) =>
-            entry.IsPaused || entry.Episodes.Count == 0 || entry.HasUnwatchedEpisodes ||
+            entry.IsPaused || entry.Episodes.Count == 0 || entry.Episodes.Any(episode => !entry.Watched.Contains(episode.id)) ||
             !string.Equals(entry.Show.status, "Ended", StringComparison.OrdinalIgnoreCase);
 
         private void TogglePause(Entry entry)
@@ -578,7 +672,7 @@ namespace TVShowsTracker
         {
             ShowError(UpdateProgress(entry =>
             {
-                foreach (var episode in entry.Episodes.Where(episode => episode.season == seasonNumber))
+                foreach (var episode in entry.Episodes.Where(episode => episode.season == seasonNumber && entry.IsEpisodeReleased(episode)))
                     entry.Watched.Add(episode.id);
                 if (entry.Current.HasValue && entry.Watched.Contains(entry.Current.Value)) entry.Current = null;
             }, target));
@@ -639,7 +733,12 @@ namespace TVShowsTracker
             public int Id { get; set; }
             public string Label { get; set; }
             public bool Watched { get; set; }
-            public string CurrentLabel => "Смотрю: " + Label;
+            public bool IsUnreleased { get; set; }
+            public bool IsCurrent { get; set; }
+            public bool CanToggleWatched => !IsUnreleased || Watched;
+            public bool CanToggleCurrent => !IsUnreleased || IsCurrent;
+            public string CurrentToolTip => IsCurrent ? "Снять метку «Смотрю»" : "Смотрю";
+            public string CurrentLabel => CurrentToolTip + ": " + Label;
         }
     }
 }

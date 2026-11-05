@@ -107,7 +107,7 @@
        <Path Style="{StaticResource Icon}" Width="12" Height="12" Data="M 3,3 L 13,13 M 13,3 L 3,13"/>
       </Button>
      </Grid>
-     <TabControl x:Name="LibraryTabs" DockPanel.Dock="Top" Margin="0,0,0,12" FontSize="11" SelectedIndex="0"
+     <TabControl x:Name="LibraryTabs" DockPanel.Dock="Top" Margin="0,0,0,12" FontSize="11"
                  AutomationProperties.Name="Фильтр библиотеки" SelectionChanged="LibraryTabChanged">
       <TabControl.Template>
        <ControlTemplate TargetType="TabControl">
@@ -147,7 +147,7 @@
        </Style>
       </TabControl.ItemContainerStyle>
       <TabItem Header="Все"/>
-      <TabItem Header="Непросмотренные"/>
+      <TabItem Header="Непросмотренные" IsSelected="True"/>
       <TabItem Header="Завершённые"/>
       <TabItem Header="На паузе"/>
      </TabControl>
@@ -172,15 +172,20 @@
            </Grid>
           </Border>
           <DockPanel Grid.Column="1" Margin="10,0,0,0">
-           <Ellipse DockPanel.Dock="Right" Width="8" Height="8" Margin="6,0,2,0" VerticalAlignment="Center"
-                    Fill="{StaticResource Focus}" ToolTip="Есть непросмотренные серии"
-                    AutomationProperties.Name="Есть непросмотренные серии"
-                    Visibility="{Binding ShowUnwatchedIndicator, Converter={StaticResource BooleanToVisibility}}"/>
-           <Border DockPanel.Dock="Right" Margin="6,0,0,0" Padding="6,2" VerticalAlignment="Top"
+           <StackPanel DockPanel.Dock="Right" Margin="6,0,0,0" VerticalAlignment="Top">
+            <TextBlock Text="{Binding NextUnwatchedEpisodeLabel}" FontSize="10" Foreground="{StaticResource Muted}"
+                       HorizontalAlignment="Right" ToolTip="Следующая непросмотренная серия"
+                       Visibility="{Binding HasUnwatchedEpisodes, Converter={StaticResource BooleanToVisibility}}"/>
+           <Border Margin="0,2,0,0" Padding="6,2" HorizontalAlignment="Right"
                    Background="{StaticResource Warm}" CornerRadius="8"
                    Visibility="{Binding IsPaused, Converter={StaticResource BooleanToVisibility}}">
             <TextBlock Text="На паузе" Foreground="{StaticResource WarmInk}" FontSize="11" FontWeight="SemiBold"/>
            </Border>
+           <Ellipse Width="8" Height="8" Margin="0,5,2,0" HorizontalAlignment="Right"
+                    Fill="{StaticResource Focus}" ToolTip="Есть непросмотренные серии"
+                    AutomationProperties.Name="Есть непросмотренные серии"
+                    Visibility="{Binding ShowUnwatchedIndicator, Converter={StaticResource BooleanToVisibility}}"/>
+           </StackPanel>
            <StackPanel VerticalAlignment="Center">
             <TextBlock Text="{Binding Show.Label}" FontWeight="SemiBold" TextWrapping="Wrap"/>
             <TextBlock Text="{Binding Show.RussianTitle}" Foreground="{StaticResource Muted}" FontSize="12"
@@ -238,16 +243,28 @@
       </Border>
       <StackPanel Grid.Column="1" Margin="16,0,0,0">
        <DockPanel>
-        <TextBlock DockPanel.Dock="Right" Margin="10,0,0,0" FontSize="12">
+        <TextBlock x:Name="SourceLink" DockPanel.Dock="Right" Margin="10,0,0,0" FontSize="12">
          <Hyperlink Click="OpenSource">Карточка на TVmaze</Hyperlink>
         </TextBlock>
         <TextBlock Text="ПРОГРЕСС ПРОСМОТРА" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
        </DockPanel>
+       <DockPanel>
+        <Button x:Name="RefreshSeriesButton" DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                Width="28" Height="28" MinHeight="0" Margin="8,2,0,0" VerticalAlignment="Top" Click="RefreshSeriesClick"
+                ToolTip="Обновить сериал" AutomationProperties.Name="Обновить сериал">
+         <Path Style="{StaticResource Icon}" Data="{StaticResource RefreshSeriesIcon}"/>
+        </Button>
+        <Button DockPanel.Dock="Left" Style="{StaticResource IconButton}" Width="28" Height="28" MinHeight="0"
+                Margin="0,2,8,0" VerticalAlignment="Top" Click="CopySelectedShowTitle"
+                ToolTip="Скопировать название сериала" AutomationProperties.Name="Скопировать название сериала">
+         <Path Style="{StaticResource Icon}" Data="M 6,6 H 17 V 18 H 6 Z M 3,14 H 2 V 2 H 13 V 3"/>
+        </Button>
        <TextBlock x:Name="ShowHeading" FontSize="23" FontWeight="SemiBold" TextWrapping="Wrap" MaxHeight="58"
                   TextTrimming="CharacterEllipsis">
         <Run x:Name="ShowTitle"/><Run x:Name="ShowRussianTitle" FontSize="15" FontWeight="Normal"
                                       Foreground="{StaticResource Muted}"/>
        </TextBlock>
+       </DockPanel>
        <TextBlock x:Name="ProgressText" Foreground="{StaticResource Muted}" Margin="0,4,0,7"/>
        <ProgressBar x:Name="Progress" Height="7" AutomationProperties.Name="Прогресс просмотра"/>
        <TextBlock x:Name="CurrentText" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"
@@ -269,7 +286,7 @@
         <DataTemplate>
          <DockPanel>
           <Button DockPanel.Dock="Right" Margin="8,0,0,0" Width="30" Height="28" MinHeight="0" Padding="0"
-                  ToolTip="Смотрю" Click="SetCurrent" AutomationProperties.Name="{Binding CurrentLabel}">
+                  ToolTip="{Binding CurrentToolTip}" Click="SetCurrent" AutomationProperties.Name="{Binding CurrentLabel}">
            <Button.Style>
             <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
              <Setter Property="Visibility" Value="Hidden"/>
@@ -280,14 +297,53 @@
               <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                <Setter Property="Visibility" Value="Visible"/>
               </DataTrigger>
+              <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+               <Setter Property="Visibility" Value="Visible"/>
+              </DataTrigger>
+              <DataTrigger Binding="{Binding CanToggleCurrent}" Value="False">
+               <Setter Property="Visibility" Value="Hidden"/>
+              </DataTrigger>
              </Style.Triggers>
             </Style>
            </Button.Style>
-           <Path Data="M 0,0 L 9,5.5 L 0,11 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+           <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
+            <Path.Style>
+             <Style TargetType="Path">
+              <Setter Property="Data" Value="M 0,0 L 9,5.5 L 0,11 Z"/>
+              <Style.Triggers>
+               <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                <Setter Property="Data" Value="M 0,0 H 9 V 9 H 0 Z"/>
+               </DataTrigger>
+              </Style.Triggers>
+             </Style>
+            </Path.Style>
+           </Path>
           </Button>
           <CheckBox IsChecked="{Binding Watched, Mode=OneWay}" Click="ToggleWatched"
+                    IsEnabled="{Binding CanToggleWatched}"
                     AutomationProperties.Name="{Binding Label}">
-           <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+           <TextBlock TextWrapping="Wrap">
+            <TextBlock.Style>
+             <Style TargetType="TextBlock">
+              <Style.Triggers>
+               <DataTrigger Binding="{Binding IsUnreleased}" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+               </DataTrigger>
+              </Style.Triggers>
+             </Style>
+            </TextBlock.Style>
+            <Run Text="{Binding Label}"/>
+            <InlineUIContainer BaselineAlignment="Center">
+             <StackPanel Orientation="Horizontal" Margin="6,0,0,0"
+                         Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibility}}">
+              <Path Data="M 4,0 L 0,3 L 4,6 Z" Width="4" Height="6" Margin="0,0,4,0"
+                    Fill="{StaticResource CurrentEpisodeHint}" VerticalAlignment="Center">
+               <Path.RenderTransform><TranslateTransform Y="2"/></Path.RenderTransform>
+              </Path>
+              <TextBlock Text="смотрю" FontSize="12" Foreground="{StaticResource CurrentEpisodeHint}" VerticalAlignment="Center"/>
+             </StackPanel>
+            </InlineUIContainer>
+           </TextBlock>
           </CheckBox>
          </DockPanel>
         </DataTemplate>

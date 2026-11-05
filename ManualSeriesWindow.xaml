@@ -1,0 +1,38 @@
+<Window x:Class="TVShowsTracker.ManualSeriesWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Style="{StaticResource AppWindow}" Icon="App.ico" Title="Добавить сериал вручную"
+ Width="540" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+ ShowInTaskbar="False">
+ <Border Style="{StaticResource Card}" Margin="16">
+  <StackPanel>
+   <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+              Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+
+   <TextBlock x:Name="OriginalTitleLabel" Text="Оригинальное название" Margin="0,0,0,4"/>
+   <TextBox x:Name="OriginalTitle" AutomationProperties.LabeledBy="{Binding ElementName=OriginalTitleLabel}"/>
+
+   <TextBlock x:Name="RussianTitleLabel" Text="Русское название (необязательно)" Margin="0,10,0,4"/>
+   <TextBox x:Name="RussianTitle" AutomationProperties.LabeledBy="{Binding ElementName=RussianTitleLabel}"/>
+
+   <TextBlock x:Name="YearLabel" Text="Год премьеры (необязательно)" Margin="0,10,0,4"/>
+   <TextBox x:Name="Year" Width="100" HorizontalAlignment="Left"
+            AutomationProperties.LabeledBy="{Binding ElementName=YearLabel}"/>
+
+   <TextBlock x:Name="EpisodeCountsLabel" Text="Количество серий по сезонам" Margin="0,10,0,4"/>
+   <TextBox x:Name="EpisodeCounts" AutomationProperties.LabeledBy="{Binding ElementName=EpisodeCountsLabel}"
+            AutomationProperties.HelpText="{Binding Text, ElementName=EpisodeCountsHint}"/>
+   <TextBlock x:Name="EpisodeCountsHint" Margin="0,4,0,0" Foreground="{StaticResource Muted}" TextWrapping="Wrap"
+              Text="Укажите по одному числу на сезон через запятую. Например, «8, 10, 0» создаст три сезона. Для сезона без серий укажите 0."/>
+
+   <CheckBox x:Name="Ended" Content="Сериал завершён" Margin="0,12,0,0"/>
+   <TextBlock x:Name="ErrorMessage" Foreground="{StaticResource Danger}" TextWrapping="Wrap"
+              Visibility="Collapsed" Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite"/>
+   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+    <Button Content="Отмена" IsCancel="True" Margin="0,0,8,0"/>
+    <Button x:Name="SaveButton" Content="Добавить" IsDefault="True" Click="SaveClick"
+            Style="{StaticResource PrimaryButton}"/>
+   </StackPanel>
+  </StackPanel>
+ </Border>
+</Window>

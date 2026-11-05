@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -16,6 +17,8 @@ namespace TVShowsTracker
     public sealed class Show
     {
         public int id { get; set; }
+        [BsonIgnore, IgnoreDataMember]
+        public bool IsManual => id < 0;
         public string name { get; set; }
         public string premiered { get; set; }
         public string status { get; set; }
@@ -58,10 +61,28 @@ namespace TVShowsTracker
         public bool IsPaused { get; set; }
 
         [BsonIgnore]
-        public bool HasUnwatchedEpisodes => Episodes.Any(episode => !Watched.Contains(episode.id));
+        public bool HasUnwatchedEpisodes => Episodes.Any(IsReleasedAndUnwatched);
+
+        private bool IsReleasedAndUnwatched(Episode episode) =>
+            !Watched.Contains(episode.id) && IsEpisodeReleased(episode);
+
+        public bool IsEpisodeReleased(Episode episode) => Show.IsManual ||
+            (DateTime.TryParseExact(episode.airdate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var release) && release <= DateTime.Today);
 
         [BsonIgnore]
         public bool ShowUnwatchedIndicator => !IsPaused && HasUnwatchedEpisodes;
+
+        [BsonIgnore]
+        public string NextUnwatchedEpisodeLabel
+        {
+            get
+            {
+                var episode = Episodes.OrderBy(item => item.season).ThenBy(item => item.number)
+                    .FirstOrDefault(IsReleasedAndUnwatched);
+                return episode == null ? string.Empty : $"S{episode.season:00}E{episode.number:00}";
+            }
+        }
     }
 
     public sealed class SearchResult { public Show show { get; set; } }

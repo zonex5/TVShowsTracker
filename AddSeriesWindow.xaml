@@ -73,6 +73,8 @@
    </TextBlock>
    <Button x:Name="SkipButton" Visibility="Collapsed" Margin="0,12,0,0"
            HorizontalAlignment="Right" Content="Пропустить строку" Click="SkipClick"/>
+   <Button x:Name="ManualButton" Visibility="Collapsed" Margin="0,12,0,0"
+           HorizontalAlignment="Right" Content="Добавить вручную…" Click="ManualClick"/>
   </StackPanel>
  </Border>
 </Window>

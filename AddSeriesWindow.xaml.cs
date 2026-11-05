@@ -11,12 +11,15 @@ namespace TVShowsTracker
     public partial class AddSeriesWindow : Window
     {
         private readonly Func<Show, Task<string>> addSeries;
+        private readonly Func<Entry, string> saveManual;
         private bool adding;
 
-        internal AddSeriesWindow(Func<Show, Task<string>> addSeries)
+        internal AddSeriesWindow(Func<Show, Task<string>> addSeries, Func<Entry, string> saveManual = null)
         {
             this.addSeries = addSeries;
+            this.saveManual = saveManual;
             InitializeComponent();
+            if (saveManual != null) ManualButton.Visibility = Visibility.Visible;
             Loaded += (sender, args) => Query.Focus();
             Closing += (sender, args) => args.Cancel = adding;
         }
@@ -33,6 +36,12 @@ namespace TVShowsTracker
         }
 
         private void SkipClick(object sender, RoutedEventArgs e) => Close();
+
+        private void ManualClick(object sender, RoutedEventArgs e)
+        {
+            var dialog = new ManualSeriesWindow(saveManual, Query.Text.Trim()) { Owner = this };
+            if (dialog.ShowDialog() == true) DialogResult = true;
+        }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
@@ -97,7 +106,7 @@ namespace TVShowsTracker
             if (adding || show == null) return;
 
             adding = true;
-            Results.IsEnabled = SearchButton.IsEnabled = false;
+            Results.IsEnabled = SearchButton.IsEnabled = ManualButton.IsEnabled = false;
             Status.Text = "Загружаем сезоны и серии…";
             try
             {
@@ -114,7 +123,7 @@ namespace TVShowsTracker
             finally
             {
                 adding = false;
-                Results.IsEnabled = SearchButton.IsEnabled = true;
+                Results.IsEnabled = SearchButton.IsEnabled = ManualButton.IsEnabled = true;
             }
         }
     }
