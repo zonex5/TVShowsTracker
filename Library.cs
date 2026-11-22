@@ -61,7 +61,19 @@ namespace TVShowsTracker
         public string Category { get; set; } = "Watching";
 
         [BsonIgnore]
-        public string CategoryLabel => Category == "Paused" ? "На паузе" : Category == "Watched" ? "Просмотренные" : "Сейчас смотрю";
+        public string CategoryLabel
+        {
+            get
+            {
+                switch (Category)
+                {
+                    case "Paused": return "На паузе";
+                    case "Watched": return "Просмотренные";
+                    case "Planned": return "Буду смотреть";
+                    default: return "Сейчас смотрю";
+                }
+            }
+        }
 
         [BsonIgnore]
         public bool HasUnwatchedEpisodes => Episodes.Any(IsReleasedAndUnwatched);

@@ -112,7 +112,7 @@
       <TabControl.Template>
        <ControlTemplate TargetType="TabControl">
         <Border Background="{StaticResource Tile}" CornerRadius="11" Padding="3">
-         <StackPanel IsItemsHost="True" Orientation="Horizontal" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+         <WrapPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
         </Border>
        </ControlTemplate>
       </TabControl.Template>
@@ -147,9 +147,10 @@
        </Style>
       </TabControl.ItemContainerStyle>
       <TabItem Header="Все"/>
-      <TabItem Header="Сейчас смотрю" IsSelected="True"/>
-      <TabItem Header="Просмотренные"/>
-      <TabItem Header="На паузе"/>
+      <TabItem Header="Сейчас смотрю" Tag="Watching" IsSelected="True"/>
+      <TabItem Header="Просмотренные" Tag="Watched"/>
+      <TabItem Header="На паузе" Tag="Paused"/>
+      <TabItem Header="Буду смотреть" Tag="Planned"/>
      </TabControl>
      <Grid>
       <ListBox x:Name="Shows" SelectionChanged="ShowChanged" AutomationProperties.Name="Моя библиотека">
@@ -215,6 +216,9 @@
                 <DataTrigger Binding="{Binding Category}" Value="Paused">
                  <Setter Property="Background" Value="{StaticResource Warm}"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Category}" Value="Planned">
+                 <Setter Property="Background" Value="#EEE7F8"/>
+                </DataTrigger>
                </Style.Triggers>
               </Style>
              </Border.Style>
@@ -228,6 +232,9 @@
                  </DataTrigger>
                  <DataTrigger Binding="{Binding Category}" Value="Paused">
                   <Setter Property="Foreground" Value="{StaticResource WarmInk}"/>
+                 </DataTrigger>
+                 <DataTrigger Binding="{Binding Category}" Value="Planned">
+                  <Setter Property="Foreground" Value="#5C397F"/>
                  </DataTrigger>
                 </Style.Triggers>
                </Style>

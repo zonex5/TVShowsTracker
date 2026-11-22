@@ -125,18 +125,8 @@ namespace TVShowsTracker
         private void BindLibrary(Entry selection)
         {
             IEnumerable<Entry> visible = entries;
-            switch (LibraryTabs.SelectedIndex)
-            {
-                case 1:
-                    visible = visible.Where(entry => entry.Category == "Watching");
-                    break;
-                case 2:
-                    visible = visible.Where(entry => entry.Category == "Watched");
-                    break;
-                case 3:
-                    visible = visible.Where(entry => entry.Category == "Paused");
-                    break;
-            }
+            if (LibraryTabs.SelectedItem is TabItem tab && tab.Tag is string category)
+                visible = visible.Where(entry => entry.Category == category);
 
             string query = LibraryQuery.Text.Trim();
             if (query.Length > 0)
@@ -418,11 +408,12 @@ namespace TVShowsTracker
             var menu = row.ContextMenu;
             menu.Items.Clear();
             var move = new MenuItem { Header = "Переместить в категорию" };
-            foreach (var category in new[] { "Watching", "Watched", "Paused" })
+            foreach (TabItem tab in LibraryTabs.Items)
             {
+                if (!(tab.Tag is string category)) continue;
                 var item = new MenuItem
                 {
-                    Header = category == "Watching" ? "Сейчас смотрю" : category == "Watched" ? "Просмотренные" : "На паузе",
+                    Header = tab.Header,
                     IsEnabled = entry.Category != category
                 };
                 item.Click += (source, args) => MoveToCategory(entry, category);
